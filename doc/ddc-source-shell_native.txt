@@ -40,8 +40,8 @@ shell		(string)
 		A required parameter to specify the shell to be used.
 		Supported values are fish, xonsh, and zsh.
 
-		NOTE: Zsh saves compdump file in `$DEOPLETE_ZSH_CACHE_DIR` or
-		`$XDG_CACHE_HOME` or `$HOME/cache` directory.
+		NOTE: Zsh saves compdump file in `$XDG_CACHE_HOME` or
+		`$HOME/cache` directory.
 
 		Default: ""
 
