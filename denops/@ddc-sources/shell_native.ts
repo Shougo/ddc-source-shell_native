@@ -1,6 +1,5 @@
 import type { Context, DdcGatherItems } from "jsr:@shougo/ddc-vim@~9.1.0/types";
 import { BaseSource } from "jsr:@shougo/ddc-vim@~9.1.0/source";
-import { printError } from "jsr:@shougo/ddc-vim@~9.1.0/utils";
 
 import type { Denops } from "jsr:@denops/core@~7.0.0";
 import * as fn from "jsr:@denops/std@~7.4.0/function";
@@ -15,7 +14,11 @@ type Params = {
 };
 
 export class Source extends BaseSource<Params> {
-  #captures: string[] = [];
+  #proc: Deno.ChildProcess | undefined;
+  #writer: WritableStreamDefaultWriter<Uint8Array> | undefined;
+
+  // Buffer for collecting output lines
+  #outputBuffer: string[] = [];
 
   override async onInit(args: {
     denops: Denops;
@@ -27,13 +30,42 @@ export class Source extends BaseSource<Params> {
     }
 
     const runtimepath = await op.runtimepath.getGlobal(args.denops);
-    this.#captures = await args.denops.call(
+    const captures = await args.denops.call(
       "globpath",
       runtimepath,
       `bin/capture.${shell}`,
       1,
       1,
     ) as string[];
+
+    this.#proc = new Deno.Command(
+      args.sourceParams.shell,
+      {
+        args: [captures[0]],
+        stdout: "piped",
+        stderr: "piped",
+        stdin: "piped",
+        cwd: await fn.getcwd(args.denops) as string,
+        env: args.sourceParams.envs,
+      },
+    ).spawn();
+
+    this.#proc.stdout
+      .pipeThrough(new TextDecoderStream())
+      .pipeThrough(new TextLineStream())
+      .pipeTo(
+        new WritableStream({
+          write: (chunk: string) => {
+            this.#outputBuffer.push(chunk); // Collect output lines
+          },
+        }),
+      ).finally(() => {
+        this.#proc = undefined;
+        this.#writer = undefined;
+        this.#outputBuffer = [];
+      });
+
+    this.#writer = this.#proc.stdin.getWriter();
   }
 
   override getCompletePosition(args: {
@@ -50,21 +82,21 @@ export class Source extends BaseSource<Params> {
     completeStr: string;
     sourceParams: Params;
   }): Promise<DdcGatherItems> {
-    if (this.#captures.length < 0) {
+    if (!this.#proc || !this.#writer) {
       return [];
     }
 
     let input = args.context.input;
     if (args.context.mode !== "c") {
       const filetype = await op.filetype.getLocal(args.denops);
-      if (
-        filetype === "deol" && await fn.exists(args.denops, "*deol#get_input")
-      ) {
+      const existsDeol = await fn.exists(args.denops, "*deol#get_input");
+      if (filetype === "deol" && existsDeol) {
         input = await args.denops.call("deol#get_input") as string;
       }
 
       const uiName = await vars.b.get(args.denops, "ddt_ui_name", "");
-      if (uiName.length > 0 && await fn.exists(args.denops, "*ddt#get_input")) {
+      const existsDdt = await fn.exists(args.denops, "*ddt#get_input");
+      if (uiName.length > 0 && existsDdt) {
         input = await args.denops.call("ddt#get_input", uiName) as string;
       }
     }
@@ -74,40 +106,14 @@ export class Source extends BaseSource<Params> {
       input = input.slice(1);
     }
 
-    const proc = new Deno.Command(
-      args.sourceParams.shell,
-      {
-        args: [this.#captures[0], input],
-        stdout: "piped",
-        stderr: "piped",
-        stdin: "null",
-        cwd: await fn.getcwd(args.denops) as string,
-        env: args.sourceParams.envs,
-      },
-    ).spawn();
+    await this.#writer.write(new TextEncoder().encode(input + "\n"));
 
-    // NOTE: In Vim, await command.output() does not work.
-    const stdout = [];
-    let replaceLine = true;
-    for await (let line of iterLine(proc.stdout)) {
-      if (line.length === 0) {
-        continue;
-      }
+    // Wait for the output buffer to be populated
+    // NOTE: Adjust timing if necessary
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
-      if (replaceLine) {
-        // NOTE: Replace the first line.  It may includes garbage texts.
-        line = line.replace(/\r\r.*\[J/, "");
-        if (line.startsWith(input)) {
-          line = line.slice(input.length);
-        }
-        replaceLine = false;
-      }
-
-      // Replace the last //.
-      line = line.replace(/\/\/$/, "/");
-
-      stdout.push(line);
-    }
+    // Process collected lines
+    const stdout = this.#outputBuffer.splice(0); // Copy and clear the buffer
 
     const delimiter = {
       zsh: " -- ",
@@ -115,6 +121,7 @@ export class Source extends BaseSource<Params> {
     }[args.sourceParams.shell] ?? "";
 
     const items = stdout.map((line) => {
+      line = line.replace(/\/\/$/, "/"); // Replace the last //
       if (delimiter === "") {
         return { word: line };
       }
@@ -122,25 +129,6 @@ export class Source extends BaseSource<Params> {
       return pieces.length <= 1
         ? { word: line }
         : { word: pieces[0], info: pieces[1] };
-    });
-
-    proc.status.then(async (s) => {
-      if (s.success) {
-        return;
-      }
-
-      await printError(
-        args.denops,
-        `Run ${args.sourceParams.shell} is failed with exit code ${s.code}.`,
-      );
-      const err = [];
-      for await (const line of iterLine(proc.stderr)) {
-        err.push(line);
-      }
-      await printError(
-        args.denops,
-        err.join("\n"),
-      );
     });
 
     return items;
@@ -151,17 +139,5 @@ export class Source extends BaseSource<Params> {
       envs: {},
       shell: "",
     };
-  }
-}
-
-async function* iterLine(r: ReadableStream<Uint8Array>): AsyncIterable<string> {
-  const lines = r
-    .pipeThrough(new TextDecoderStream())
-    .pipeThrough(new TextLineStream());
-
-  for await (const line of lines) {
-    if ((line as string).length) {
-      yield line as string;
-    }
   }
 }

@@ -1,6 +1,25 @@
 #!/usr/bin/env xonsh
 
+import sys
 import xonsh.completer
 
-for i in xonsh.completer.Completer().complete("", "", 0, 0, {}, multiline_text=$ARG1, cursor_index=len($ARG1))[0]:
-  print(i)
+def main():
+    completer = xonsh.completer.Completer()
+    while True:
+        try:
+            multiline_text = input()
+
+            completions = completer.complete(
+                "", "", 0, 0, {},
+                multiline_text=multiline_text,
+                cursor_index=len(multiline_text)
+            )[0]
+
+            for completion in completions:
+                print(completion)
+        except KeyboardInterrupt:
+            print("\nExiting...")
+            break
+
+if __name__ == "__main__":
+    main()
