@@ -22,7 +22,7 @@ initialize_shell() {
         echo 'error initializing.' >&2
         exit 2
     } =( <<< '
-    typeset -gx CACHE_DIR=${XDG_CACHE_HOME:-"$HOME/.cache"}
+    typeset -gx CACHE_DIR=${XDG_CACHE_HOME:-"$HOME/.cache"}/ddc-source-shell_native
 
     mkdir -p "$CACHE_DIR"
 
