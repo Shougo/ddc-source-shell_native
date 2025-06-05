@@ -17,6 +17,7 @@ def main():
 
             for completion in completions:
                 print(completion)
+            print("EOF", file=sys.stderr)
         except KeyboardInterrupt:
             print("\nExiting...")
             break

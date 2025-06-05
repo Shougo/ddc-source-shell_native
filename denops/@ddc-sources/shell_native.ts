@@ -16,6 +16,7 @@ type Params = {
 export class Source extends BaseSource<Params> {
   #proc: Deno.ChildProcess | undefined;
   #writer: WritableStreamDefaultWriter<Uint8Array> | undefined;
+  #stderrEOF: Promise<void> | undefined;
 
   // Buffer for collecting output lines
   #outputBuffer: string[] = [];
@@ -65,6 +66,21 @@ export class Source extends BaseSource<Params> {
         this.#outputBuffer = [];
       });
 
+    // Wait until "EOF"
+    this.#stderrEOF = (async () => {
+      const decoder = new TextDecoderStream();
+      const lines = this.#proc!.stderr.pipeThrough(decoder).pipeThrough(
+        new TextLineStream(),
+      );
+      const reader = lines.getReader();
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (value === "EOF") break;
+      }
+      reader.releaseLock();
+    })();
+
     this.#writer = this.#proc.stdin.getWriter();
   }
 
@@ -108,9 +124,10 @@ export class Source extends BaseSource<Params> {
 
     await this.#writer.write(new TextEncoder().encode(input + "\n"));
 
-    // Wait for the output buffer to be populated
-    // NOTE: Adjust timing if necessary
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // Wait for stderr EOF
+    if (this.#stderrEOF) {
+      await this.#stderrEOF;
+    }
 
     // Process collected lines
     const stdout = this.#outputBuffer.splice(0); // Copy and clear the buffer

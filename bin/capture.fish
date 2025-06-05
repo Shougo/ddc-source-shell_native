@@ -10,6 +10,8 @@ function main
         end
 
         complete -C "$user_input"
+
+        echo "EOF" >&2
     end
 end
 

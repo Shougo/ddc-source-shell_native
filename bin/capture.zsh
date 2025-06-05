@@ -156,6 +156,8 @@ while true; do
         (( tog )) && echo -E - $line
     done
 
+    echo "EOF" >&2
+
     # Clean up the zpty process after the loop exits
     zpty -d z
 done
