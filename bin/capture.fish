@@ -4,12 +4,10 @@ function main
     while true
         set user_input (read)
 
-        if test -z "$user_input"
-            # Skip empty input
-            continue
+        if test -n "$user_input"
+            # Only procss non-empty input
+            complete -C "$user_input"
         end
-
-        complete -C "$user_input"
 
         echo "EOF" >&2
     end
