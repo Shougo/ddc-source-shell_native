@@ -7,11 +7,14 @@ import * as op from "jsr:@denops/std@~7.5.0/option";
 import * as vars from "jsr:@denops/std@~7.5.0/variable";
 
 import { TextLineStream } from "jsr:@std/streams@~1.0.3/text-line-stream";
+import { is } from "jsr:@core/unknownutil@4/is";
 
 type Params = {
   envs: Record<string, string>;
   shell: string;
 };
+
+const isEnvs = is.RecordObjectOf(is.String);
 
 export class Source extends BaseSource<Params> {
   #completer?: (cmdline: string) => Promise<string[]>;
@@ -22,7 +25,17 @@ export class Source extends BaseSource<Params> {
   }) {
     const { denops } = args;
     const { shell, envs } = args.sourceParams;
-    if (shell === "" || await fn.executable(denops, shell) === 0) {
+
+    if (!shell || !is.String(shell)) {
+      await this.#log_error(denops, `Invalid param: shell`);
+      return;
+    }
+    if (!isEnvs(envs)) {
+      await this.#log_error(denops, `Invalid param: envs`);
+      return;
+    }
+    if (await fn.executable(denops, shell) !== 1) {
+      await this.#log_error(denops, `Command not found: ${shell}`);
       return;
     }
 
@@ -34,6 +47,11 @@ export class Source extends BaseSource<Params> {
       1,
       1,
     ) as string[];
+
+    if (!capture) {
+      await this.#log_error(denops, `Shell not supported: ${shell}`);
+      return;
+    }
 
     const proc = new Deno.Command(
       shell,
@@ -73,6 +91,8 @@ export class Source extends BaseSource<Params> {
               // Move out buffered output lines
               const output = outputBuffer.splice(0);
               eofWaiter?.resolve(output);
+            } else {
+              this.#log_error(denops, `${shell}: ${chunk}`);
             }
           },
         }),
@@ -97,10 +117,11 @@ export class Source extends BaseSource<Params> {
 
     // Clean up resources after the process ends
     Promise.allSettled([proc.status, stdout, stderr])
-      .finally(() => {
+      .finally(async () => {
         this.#completer = undefined;
         eofWaiter?.resolve([]);
         eofWaiter = undefined;
+        await this.#log_error(denops, `Worker process terminated`);
       });
   }
 
@@ -175,5 +196,13 @@ export class Source extends BaseSource<Params> {
       envs: {},
       shell: "",
     };
+  }
+
+  async #log_error(denops: Denops, message: string): Promise<void> {
+    await denops.call(
+      "ddc#util#print_error",
+      message,
+      `ddc-source-${this.name}`,
+    );
   }
 }
