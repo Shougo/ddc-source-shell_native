@@ -5,7 +5,7 @@ function main
         read --local user_input
 
         if test -n "$user_input"
-            # Only procss non-empty input
+            # Only process non-empty input
             complete -C "$user_input"
         end
 
