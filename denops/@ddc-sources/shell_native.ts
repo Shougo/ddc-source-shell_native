@@ -27,10 +27,10 @@ export class Source extends BaseSource<Params> {
     }
 
     const runtimepath = await op.runtimepath.getGlobal(denops);
-    const captures = await denops.call(
+    const [capture] = await denops.call(
       "globpath",
       runtimepath,
-      `bin/capture.${shell}`,
+      `bin/ddc-source-shell_native/capture.${shell}`,
       1,
       1,
     ) as string[];
@@ -38,7 +38,7 @@ export class Source extends BaseSource<Params> {
     const proc = new Deno.Command(
       shell,
       {
-        args: [captures[0]],
+        args: [capture],
         stdout: "piped",
         stderr: "piped",
         stdin: "piped",
