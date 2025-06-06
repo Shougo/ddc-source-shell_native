@@ -2,7 +2,7 @@
 
 function main
     while true
-        set user_input (read)
+        read --local user_input
 
         if test -n "$user_input"
             # Only procss non-empty input
