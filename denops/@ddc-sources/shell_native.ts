@@ -34,10 +34,6 @@ export class Source extends BaseSource<Params> {
       await this.#printError(denops, `Invalid param: envs`);
       return;
     }
-    if (await fn.executable(denops, shell) !== 1) {
-      await this.#printError(denops, `Command not found: ${shell}`);
-      return;
-    }
 
     const runtimepath = await op.runtimepath.getGlobal(denops);
     const [capture] = await denops.call(
@@ -53,7 +49,7 @@ export class Source extends BaseSource<Params> {
       return;
     }
 
-    const proc = new Deno.Command(
+    const command = new Deno.Command(
       shell,
       {
         args: [capture],
@@ -61,9 +57,26 @@ export class Source extends BaseSource<Params> {
         stderr: "piped",
         stdin: "piped",
         cwd: await fn.getcwd(denops) as string,
-        env: envs,
+        env: {
+          // Merge environment variables.
+          // This is necessary to ensure that the shell has access to the same environment as Vim.
+          ...await fn.environ(denops) as Record<string, string>,
+          ...envs,
+        },
       },
-    ).spawn();
+    );
+
+    let proc: Deno.ChildProcess;
+    try {
+      proc = command.spawn();
+    } catch (e) {
+      if (e instanceof Deno.errors.NotFound) {
+        this.#printError(denops, `Command not found: ${shell}`);
+      } else {
+        this.#printError(denops, `Failed to spawn process: ${e}`);
+      }
+      return;
+    }
 
     const outputBuffer: string[] = [];
     let eofWaiter: PromiseWithResolvers<string[]> | undefined;
