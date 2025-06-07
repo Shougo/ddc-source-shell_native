@@ -14,12 +14,7 @@ type Params = {
 };
 
 export class Source extends BaseSource<Params> {
-  #proc: Deno.ChildProcess | undefined;
-  #writer: WritableStreamDefaultWriter<Uint8Array> | undefined;
-  #stderrEOF: Promise<void> | undefined;
-
-  // Buffer for collecting output lines
-  #outputBuffer: string[] = [];
+  #completer?: (cmdline: string) => Promise<string[]>;
 
   override async onInit(args: {
     denops: Denops;
@@ -39,7 +34,7 @@ export class Source extends BaseSource<Params> {
       1,
     ) as string[];
 
-    this.#proc = new Deno.Command(
+    const proc = new Deno.Command(
       args.sourceParams.shell,
       {
         args: [captures[0]],
@@ -51,37 +46,61 @@ export class Source extends BaseSource<Params> {
       },
     ).spawn();
 
-    this.#proc.stdout
+    const outputBuffer: string[] = [];
+    let eofWaiter: PromiseWithResolvers<string[]> | undefined;
+
+    const stdout = proc.stdout
       .pipeThrough(new TextDecoderStream())
       .pipeThrough(new TextLineStream())
       .pipeTo(
         new WritableStream({
           write: (chunk: string) => {
-            this.#outputBuffer.push(chunk); // Collect output lines
+            // Collect output lines
+            outputBuffer.push(chunk);
           },
         }),
-      ).finally(() => {
-        this.#proc = undefined;
-        this.#writer = undefined;
-        this.#outputBuffer = [];
-      });
-
-    // Wait until "EOF"
-    this.#stderrEOF = (async () => {
-      const decoder = new TextDecoderStream();
-      const lines = this.#proc!.stderr.pipeThrough(decoder).pipeThrough(
-        new TextLineStream(),
       );
-      const reader = lines.getReader();
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        if (value === "EOF") break;
-      }
-      reader.releaseLock();
-    })();
 
-    this.#writer = this.#proc.stdin.getWriter();
+    const stderr = proc.stderr
+      .pipeThrough(new TextDecoderStream())
+      .pipeThrough(new TextLineStream())
+      .pipeTo(
+        new WritableStream({
+          write: (chunk: string) => {
+            // Wait until "EOF"
+            if (chunk === "EOF") {
+              // Move out buffered output lines
+              const output = outputBuffer.splice(0);
+              eofWaiter?.resolve(output);
+            }
+          },
+        }),
+      );
+
+    const { writable, readable } = new TextEncoderStream();
+    readable.pipeTo(proc.stdin);
+    const cmdlineWriter = writable.getWriter();
+
+    this.#completer = async (cmdline: string): Promise<string[]> => {
+      if (!this.#completer) {
+        return [];
+      }
+
+      // Wait for the previous completion to finish
+      await eofWaiter?.promise;
+
+      const { promise } = eofWaiter = Promise.withResolvers();
+      cmdlineWriter.write(cmdline + "\n");
+      return await promise;
+    };
+
+    // Clean up resources after the process ends
+    Promise.allSettled([proc.status, stdout, stderr])
+      .finally(() => {
+        this.#completer = undefined;
+        eofWaiter?.resolve([]);
+        eofWaiter = undefined;
+      });
   }
 
   override getCompletePosition(args: {
@@ -98,7 +117,8 @@ export class Source extends BaseSource<Params> {
     completeStr: string;
     sourceParams: Params;
   }): Promise<DdcGatherItems> {
-    if (!this.#proc || !this.#writer) {
+    const completer = this.#completer;
+    if (!completer) {
       return [];
     }
 
@@ -122,15 +142,8 @@ export class Source extends BaseSource<Params> {
       input = input.slice(1);
     }
 
-    await this.#writer.write(new TextEncoder().encode(input + "\n"));
-
-    // Wait for stderr EOF
-    if (this.#stderrEOF) {
-      await this.#stderrEOF;
-    }
-
     // Process collected lines
-    const stdout = this.#outputBuffer.splice(0); // Copy and clear the buffer
+    const stdout = await completer(input);
 
     const delimiter = {
       zsh: " -- ",
