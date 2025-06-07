@@ -115,14 +115,32 @@ export class Source extends BaseSource<Params> {
       return await promise;
     };
 
+    const dispose = () => {
+      this.#completer = undefined;
+      eofWaiter?.resolve([]);
+      eofWaiter = undefined;
+      try {
+        proc.kill();
+      } catch {
+        // Prevent error if already stopped
+      }
+    };
+
     // Clean up resources after the process ends
-    Promise.allSettled([proc.status, stdout, stderr])
+    Promise.race([proc.status, stdout, stderr])
+      .catch(() => {/* Prevent unhandled rejection */})
       .finally(async () => {
-        this.#completer = undefined;
-        eofWaiter?.resolve([]);
-        eofWaiter = undefined;
-        await this.#log_error(denops, `Worker process terminated`);
+        if (this.#completer) {
+          dispose();
+          await this.#log_error(denops, `Worker process terminated`);
+        }
       });
+
+    // Clean up resources when Denops is interrupted
+    denops.interrupted?.addEventListener("abort", () => {
+      dispose();
+      this.isInitialized = false;
+    });
   }
 
   override getCompletePosition(args: {
