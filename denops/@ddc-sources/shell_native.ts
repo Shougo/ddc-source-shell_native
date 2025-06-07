@@ -1,10 +1,10 @@
-import type { Context, DdcGatherItems } from "jsr:@shougo/ddc-vim@~9.1.0/types";
-import { BaseSource } from "jsr:@shougo/ddc-vim@~9.1.0/source";
+import type { Context, DdcGatherItems } from "jsr:@shougo/ddc-vim@~9.4.0/types";
+import { BaseSource } from "jsr:@shougo/ddc-vim@~9.4.0/source";
 
 import type { Denops } from "jsr:@denops/core@~7.0.0";
-import * as fn from "jsr:@denops/std@~7.4.0/function";
-import * as op from "jsr:@denops/std@~7.4.0/option";
-import * as vars from "jsr:@denops/std@~7.4.0/variable";
+import * as fn from "jsr:@denops/std@~7.5.0/function";
+import * as op from "jsr:@denops/std@~7.5.0/option";
+import * as vars from "jsr:@denops/std@~7.5.0/variable";
 
 import { TextLineStream } from "jsr:@std/streams@~1.0.3/text-line-stream";
 
@@ -142,15 +142,13 @@ export class Source extends BaseSource<Params> {
       input = input.slice(1);
     }
 
-    // Process collected lines
-    const stdout = await completer(input);
-
     const delimiter = {
       zsh: " -- ",
       fish: "\t",
     }[args.sourceParams.shell] ?? "";
 
-    const items = stdout.map((line) => {
+    // Process collected lines
+    const items = (await completer(input)).map((line) => {
       line = line.replace(/\/\/$/, "/"); // Replace the last //
       if (delimiter === "") {
         return { word: line };
