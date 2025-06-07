@@ -107,7 +107,14 @@ export class Source extends BaseSource<Params> {
     context: Context;
   }): Promise<number> {
     const matchPos = args.context.input.search(/\S*$/);
-    const completePos = matchPos !== null ? matchPos : -1;
+    let completePos = matchPos !== null ? matchPos : -1;
+
+    const completeStr = args.context.input.slice(completePos);
+    // For ":!" completion in command line
+    if (args.context.mode === "c" && completeStr.startsWith("!")) {
+      completePos += 1;
+    }
+
     return Promise.resolve(completePos);
   }
 
