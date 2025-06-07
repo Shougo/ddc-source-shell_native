@@ -20,13 +20,14 @@ export class Source extends BaseSource<Params> {
     denops: Denops;
     sourceParams: Params;
   }) {
-    const shell = args.sourceParams.shell;
-    if (shell === "" || await fn.executable(args.denops, shell) === 0) {
+    const { denops } = args;
+    const { shell, envs } = args.sourceParams;
+    if (shell === "" || await fn.executable(denops, shell) === 0) {
       return;
     }
 
-    const runtimepath = await op.runtimepath.getGlobal(args.denops);
-    const captures = await args.denops.call(
+    const runtimepath = await op.runtimepath.getGlobal(denops);
+    const captures = await denops.call(
       "globpath",
       runtimepath,
       `bin/capture.${shell}`,
@@ -35,14 +36,14 @@ export class Source extends BaseSource<Params> {
     ) as string[];
 
     const proc = new Deno.Command(
-      args.sourceParams.shell,
+      shell,
       {
         args: [captures[0]],
         stdout: "piped",
         stderr: "piped",
         stdin: "piped",
-        cwd: await fn.getcwd(args.denops) as string,
-        env: args.sourceParams.envs,
+        cwd: await fn.getcwd(denops) as string,
+        env: envs,
       },
     ).spawn();
 
