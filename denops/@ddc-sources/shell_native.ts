@@ -189,21 +189,11 @@ export class Source extends BaseSource<Params> {
       input = input.slice(1);
     }
 
-    const delimiter = {
-      zsh: " -- ",
-      fish: "\t",
-    }[args.sourceParams.shell] ?? "";
-
     // Process collected lines
     const items = (await completer(input)).map((line) => {
       line = line.replace(/\/\/$/, "/"); // Replace the last //
-      if (delimiter === "") {
-        return { word: line };
-      }
-      const pieces = line.split(delimiter);
-      return pieces.length <= 1
-        ? { word: line }
-        : { word: pieces[0], info: pieces[1] };
+      const [word, info] = line.split("\t", 2);
+      return info ? { word, info } : { word };
     });
 
     return items;
