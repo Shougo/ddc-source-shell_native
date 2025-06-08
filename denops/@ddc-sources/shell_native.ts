@@ -7,11 +7,14 @@ import * as op from "jsr:@denops/std@~7.5.0/option";
 import * as vars from "jsr:@denops/std@~7.5.0/variable";
 
 import { TextLineStream } from "jsr:@std/streams@~1.0.3/text-line-stream";
+import { is } from "jsr:@core/unknownutil@4/is";
 
 type Params = {
   envs: Record<string, string>;
   shell: string;
 };
+
+const isEnvs = is.RecordObjectOf(is.String);
 
 export class Source extends BaseSource<Params> {
   #completer?: (cmdline: string) => Promise<string[]>;
@@ -20,29 +23,45 @@ export class Source extends BaseSource<Params> {
     denops: Denops;
     sourceParams: Params;
   }) {
-    const shell = args.sourceParams.shell;
-    if (shell === "" || await fn.executable(args.denops, shell) === 0) {
+    const { denops } = args;
+    const { shell, envs } = args.sourceParams;
+
+    if (!shell || !is.String(shell)) {
+      await this.#log_error(denops, `Invalid param: shell`);
+      return;
+    }
+    if (!isEnvs(envs)) {
+      await this.#log_error(denops, `Invalid param: envs`);
+      return;
+    }
+    if (await fn.executable(denops, shell) !== 1) {
+      await this.#log_error(denops, `Command not found: ${shell}`);
       return;
     }
 
-    const runtimepath = await op.runtimepath.getGlobal(args.denops);
-    const captures = await args.denops.call(
+    const runtimepath = await op.runtimepath.getGlobal(denops);
+    const [capture] = await denops.call(
       "globpath",
       runtimepath,
-      `bin/capture.${shell}`,
+      `bin/ddc-source-shell_native/capture.${shell}`,
       1,
       1,
     ) as string[];
 
+    if (!capture) {
+      await this.#log_error(denops, `Shell not supported: ${shell}`);
+      return;
+    }
+
     const proc = new Deno.Command(
-      args.sourceParams.shell,
+      shell,
       {
-        args: [captures[0]],
+        args: [capture],
         stdout: "piped",
         stderr: "piped",
         stdin: "piped",
-        cwd: await fn.getcwd(args.denops) as string,
-        env: args.sourceParams.envs,
+        cwd: await fn.getcwd(denops) as string,
+        env: envs,
       },
     ).spawn();
 
@@ -72,6 +91,8 @@ export class Source extends BaseSource<Params> {
               // Move out buffered output lines
               const output = outputBuffer.splice(0);
               eofWaiter?.resolve(output);
+            } else {
+              this.#log_error(denops, `${shell}: ${chunk}`);
             }
           },
         }),
@@ -94,13 +115,32 @@ export class Source extends BaseSource<Params> {
       return await promise;
     };
 
+    const dispose = () => {
+      this.#completer = undefined;
+      eofWaiter?.resolve([]);
+      eofWaiter = undefined;
+      try {
+        proc.kill();
+      } catch {
+        // Prevent error if already stopped
+      }
+    };
+
     // Clean up resources after the process ends
-    Promise.allSettled([proc.status, stdout, stderr])
-      .finally(() => {
-        this.#completer = undefined;
-        eofWaiter?.resolve([]);
-        eofWaiter = undefined;
+    Promise.race([proc.status, stdout, stderr])
+      .catch(() => {/* Prevent unhandled rejection */})
+      .finally(async () => {
+        if (this.#completer) {
+          dispose();
+          await this.#log_error(denops, `Worker process terminated`);
+        }
       });
+
+    // Clean up resources when Denops is interrupted
+    denops.interrupted?.addEventListener("abort", () => {
+      dispose();
+      this.isInitialized = false;
+    });
   }
 
   override getCompletePosition(args: {
@@ -174,5 +214,13 @@ export class Source extends BaseSource<Params> {
       envs: {},
       shell: "",
     };
+  }
+
+  async #log_error(denops: Denops, message: string): Promise<void> {
+    await denops.call(
+      "ddc#util#print_error",
+      message,
+      `ddc-source-${this.name}`,
+    );
   }
 }
