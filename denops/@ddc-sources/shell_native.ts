@@ -7,7 +7,7 @@ import * as op from "jsr:@denops/std@~7.5.0/option";
 import * as vars from "jsr:@denops/std@~7.5.0/variable";
 
 import { TextLineStream } from "jsr:@std/streams@~1.0.3/text-line-stream";
-import { is } from "jsr:@core/unknownutil@4/is";
+import { is } from "jsr:@core/unknownutil@~4.3.0/is";
 
 type Params = {
   envs: Record<string, string>;
@@ -27,15 +27,15 @@ export class Source extends BaseSource<Params> {
     const { shell, envs } = args.sourceParams;
 
     if (!shell || !is.String(shell)) {
-      await this.#log_error(denops, `Invalid param: shell`);
+      await this.#printError(denops, `Invalid param: shell`);
       return;
     }
     if (!isEnvs(envs)) {
-      await this.#log_error(denops, `Invalid param: envs`);
+      await this.#printError(denops, `Invalid param: envs`);
       return;
     }
     if (await fn.executable(denops, shell) !== 1) {
-      await this.#log_error(denops, `Command not found: ${shell}`);
+      await this.#printError(denops, `Command not found: ${shell}`);
       return;
     }
 
@@ -49,7 +49,7 @@ export class Source extends BaseSource<Params> {
     ) as string[];
 
     if (!capture) {
-      await this.#log_error(denops, `Shell not supported: ${shell}`);
+      await this.#printError(denops, `Not supported shell: ${shell}`);
       return;
     }
 
@@ -92,7 +92,7 @@ export class Source extends BaseSource<Params> {
               const output = outputBuffer.splice(0);
               eofWaiter?.resolve(output);
             } else {
-              this.#log_error(denops, `${shell}: ${chunk}`);
+              this.#printError(denops, `${shell}: ${chunk}`);
             }
           },
         }),
@@ -132,7 +132,7 @@ export class Source extends BaseSource<Params> {
       .finally(async () => {
         if (this.#completer) {
           dispose();
-          await this.#log_error(denops, `Worker process terminated`);
+          await this.#printError(denops, `Worker process terminated`);
         }
       });
 
@@ -216,7 +216,7 @@ export class Source extends BaseSource<Params> {
     };
   }
 
-  async #log_error(denops: Denops, message: string): Promise<void> {
+  async #printError(denops: Denops, message: string): Promise<void> {
     await denops.call(
       "ddc#util#print_error",
       message,
