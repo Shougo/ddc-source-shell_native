@@ -2,14 +2,14 @@
 
 typeset -gx CACHE_DIR=${XDG_CACHE_HOME:-"$HOME/.cache"}/ddc-source-shell_native
 
-mkdir -p "$CACHE_DIR"
+[[ -d $CACHE_DIR ]] || mkdir -p "$CACHE_DIR"
 
 # No prompt!
 PROMPT=
 
 # Load completion system
-autoload -U compinit; compinit -C
-compinit -d "$CACHE_DIR/compdump"
+autoload -U compinit
+compinit -C -d "$CACHE_DIR/compdump"
 
 # Never run commands
 bindkey '^M' undefined
