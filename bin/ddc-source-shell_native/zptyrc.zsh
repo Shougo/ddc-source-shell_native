@@ -12,16 +12,21 @@ autoload -U compinit
 compinit -C -d "$CACHE_DIR/compdump"
 
 # Never run commands
-bindkey '^M' undefined
-bindkey '^J' undefined
+bindkey -r '^M'
+bindkey -r '^J'
 bindkey '^I' complete-word
+bindkey '^U' kill-buffer
 
 # Send a line with null-byte at the end before and after completions are output
 null-line () {
     echo -E - $'\0'
 }
-compprefuncs=( null-line )
-comppostfuncs=( null-line exit )
+reset-compfuncs () {
+    # comp*funcs are cleared after completion, so we need to set them up again
+    compprefuncs=( null-line )
+    comppostfuncs=( null-line reset-compfuncs )
+}
+reset-compfuncs
 
 # Never group stuff!
 zstyle ':completion:*' list-grouped false
@@ -108,6 +113,3 @@ compadd () {
 
     done
 }
-
-# signal success!
-echo ok
