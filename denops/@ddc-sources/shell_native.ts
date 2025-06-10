@@ -9,6 +9,16 @@ import * as vars from "jsr:@denops/std@~7.5.0/variable";
 import { TextLineStream } from "jsr:@std/streams@~1.0.3/text-line-stream";
 import { is } from "jsr:@core/unknownutil@~4.3.0/is";
 
+const RE_RANGE =
+  /(?:[0-9.$%, :]+|'.|\\[/?&]|\/(?:[^\\/]+|\\.)*\/|\?(?:[^\\?]+|\\.)*\?)*/;
+const RE_SILENT = /(?:sil(?:e?|ent?)\b!?)?/;
+const RE_TERMINAL = /(?:ter(?:m?|min?|minal?)\b!?(?:\s+\+\+\S*)*)/;
+const RE_CMD = /!\s*/;
+const RE_CMD_PREFIX = new RegExp(
+  `^[:\\s]*${RE_SILENT.source}[:\\s]*${RE_RANGE.source}[:\\s]*(?:!|${RE_TERMINAL.source})`,
+);
+const RE_COMPLETE_TARGET = /\S*$/;
+
 type Params = {
   envs: Record<string, string>;
   shell: string;
@@ -18,7 +28,6 @@ const isEnvs = is.RecordObjectOf(is.String);
 
 export class Source extends BaseSource<Params> {
   #completer?: (cmdline: string) => Promise<string[]>;
-  #cmdlinePattern = /^(silent!?\s+)?([0-9,.%$]*!|terminal!?\s+)/;
 
   override async onInit(args: {
     denops: Denops;
@@ -160,17 +169,27 @@ export class Source extends BaseSource<Params> {
 
   override getCompletePosition(args: {
     context: Context;
-  }): Promise<number> {
-    const matchPos = args.context.input.search(/\S*$/);
-    let completePos = matchPos !== null ? matchPos : -1;
+  }): number {
+    const { input } = args.context;
+    let completePos = -1;
 
-    // For shell command completion in command line
-    const cmdlineMatch = this.#cmdlinePattern.exec(args.context.input);
-    if (args.context.mode === "c" && cmdlineMatch?.index !== undefined) {
-      completePos = cmdlineMatch.index + cmdlineMatch[0].length;
+    if (args.context.mode === "c") {
+      // command-line mode
+      const prefixMatch = RE_CMD_PREFIX.exec(input);
+      if (prefixMatch) {
+        const prefixLength = prefixMatch[0].length;
+        const cmdline = input.slice(prefixLength);
+        const targetPos = cmdline.search(RE_COMPLETE_TARGET);
+        if (targetPos >= 0) {
+          completePos = prefixLength + targetPos;
+        }
+      }
+    } else {
+      // NOT command-line mode
+      completePos = input.search(RE_COMPLETE_TARGET);
     }
 
-    return Promise.resolve(completePos);
+    return completePos;
   }
 
   override async gather(args: {
@@ -184,8 +203,14 @@ export class Source extends BaseSource<Params> {
       return [];
     }
 
-    let input = args.context.input;
-    if (args.context.mode !== "c") {
+    let { input } = args.context;
+
+    if (args.context.mode === "c") {
+      // command-line mode
+      const prefixMatch = RE_CMD_PREFIX.exec(input);
+      input = prefixMatch ? input.slice(prefixMatch[0].length) : "";
+    } else {
+      // NOT command-line mode
       const filetype = await op.filetype.getLocal(args.denops);
       const existsDeol = await fn.exists(args.denops, "*deol#get_input");
       if (filetype === "deol" && existsDeol) {
@@ -199,10 +224,9 @@ export class Source extends BaseSource<Params> {
       }
     }
 
-    // For shell command completion in command line
-    const cmdlineMatch = this.#cmdlinePattern.exec(input);
-    if (args.context.mode === "c" && cmdlineMatch?.index !== undefined) {
-      input = input.slice(cmdlineMatch.index + cmdlineMatch[0].length);
+    input = input.trimStart();
+    if (!input) {
+      return [];
     }
 
     // Process collected lines
