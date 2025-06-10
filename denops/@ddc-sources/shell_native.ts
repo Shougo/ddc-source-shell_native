@@ -18,6 +18,7 @@ const isEnvs = is.RecordObjectOf(is.String);
 
 export class Source extends BaseSource<Params> {
   #completer?: (cmdline: string) => Promise<string[]>;
+  #cmdlinePattern = /^(silent!?\s+)?([0-9,.%$]*!|terminal!?\s+)/;
 
   override async onInit(args: {
     denops: Denops;
@@ -59,7 +60,8 @@ export class Source extends BaseSource<Params> {
         cwd: await fn.getcwd(denops) as string,
         env: {
           // Merge environment variables.
-          // This is necessary to ensure that the shell has access to the same environment as Vim.
+          // This is necessary to ensure that the shell has access to the same
+          // environment as Vim.
           ...await fn.environ(denops) as Record<string, string>,
           ...envs,
         },
@@ -162,10 +164,10 @@ export class Source extends BaseSource<Params> {
     const matchPos = args.context.input.search(/\S*$/);
     let completePos = matchPos !== null ? matchPos : -1;
 
-    const completeStr = args.context.input.slice(completePos);
-    // For ":!" completion in command line
-    if (args.context.mode === "c" && completeStr.startsWith("!")) {
-      completePos += 1;
+    // For shell command completion in command line
+    const cmdlineMatch = this.#cmdlinePattern.exec(args.context.input);
+    if (args.context.mode === "c" && cmdlineMatch?.index !== undefined) {
+      completePos = cmdlineMatch.index + cmdlineMatch[0].length;
     }
 
     return Promise.resolve(completePos);
@@ -197,17 +199,20 @@ export class Source extends BaseSource<Params> {
       }
     }
 
-    // For ":!" completion in command line
-    if (args.context.mode === "c" && input.startsWith("!")) {
-      input = input.slice(1);
+    // For shell command completion in command line
+    const cmdlineMatch = this.#cmdlinePattern.exec(input);
+    if (args.context.mode === "c" && cmdlineMatch?.index !== undefined) {
+      input = input.slice(cmdlineMatch.index + cmdlineMatch[0].length);
     }
 
     // Process collected lines
-    const items = (await completer(input)).map((line) => {
-      line = line.replace(/\/\/$/, "/"); // Replace the last //
-      const [word, info] = line.split("\t", 2);
-      return info ? { word, info } : { word };
-    });
+    const items = (await completer(input))
+      .filter((line) => line.length > 0 && !line.startsWith("input="))
+      .map((line) => {
+        line = line.replace(/\/\/$/, "/"); // Replace the last //
+        const [word, info] = line.split("\t", 2);
+        return info ? { word, info } : { word };
+      });
 
     return items;
   }
