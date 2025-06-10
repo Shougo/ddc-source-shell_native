@@ -207,7 +207,7 @@ export class Source extends BaseSource<Params> {
 
     // Process collected lines
     const items = (await completer(input))
-      .filter((line) => line.length > 0 && !line.startsWith("input="))
+      .filter((line) => line.length > 0)
       .map((line) => {
         line = line.replace(/\/\/$/, "/"); // Replace the last //
         const [word, info] = line.split("\t", 2);
