@@ -13,9 +13,14 @@ const RE_RANGE =
   /(?:[0-9.$%, :]+|'.|\\[/?&]|\/(?:[^\\/]+|\\.)*\/|\?(?:[^\\?]+|\\.)*\?)*/;
 const RE_SILENT = /(?:sil(?:e?|ent?)\b!?)?/;
 const RE_TERMINAL = /(?:ter(?:m?|min?|minal?)\b!?(?:\s+\+\+\S*)*)/;
-const RE_CMD = /!\s*/;
 const RE_CMD_PREFIX = new RegExp(
-  `^[:\\s]*${RE_SILENT.source}[:\\s]*${RE_RANGE.source}[:\\s]*(?:!|${RE_TERMINAL.source})`,
+  `^[:\\s]*${
+    RE_SILENT.source
+  }[:\\s]*${
+    RE_RANGE.source
+  }[:\\s]*(?:!|${
+    RE_TERMINAL.source
+  })`,
 );
 const RE_COMPLETE_TARGET = /\S*$/;
 
@@ -225,7 +230,7 @@ export class Source extends BaseSource<Params> {
     }
 
     input = input.trimStart();
-    if (!input) {
+    if (input.length === 0) {
       return [];
     }
 
