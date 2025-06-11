@@ -16,9 +16,9 @@ zpty -w z "source ${(qq)zpty_rcfile} && echo ok || exit 2"
 zpty -r -m z line '*ok'$'\r' || { echo "error: pty initialization failure" >&2; exit 2 }
 
 # Main loop to read from stdin and process completion
+local input
 while true; do
     # Read input from stdin
-    local input
     IFS= read -r input || break
 
     zpty -t z || { echo "error: pty closed" >&2; exit 1 }
