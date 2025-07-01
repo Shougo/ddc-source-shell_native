@@ -1,10 +1,10 @@
-import type { Context, DdcGatherItems } from "jsr:@shougo/ddc-vim@~9.4.0/types";
-import { BaseSource } from "jsr:@shougo/ddc-vim@~9.4.0/source";
+import type { Context, DdcGatherItems } from "jsr:@shougo/ddc-vim@~9.5.0/types";
+import { BaseSource } from "jsr:@shougo/ddc-vim@~9.5.0/source";
 
 import type { Denops } from "jsr:@denops/core@~7.0.0";
-import * as fn from "jsr:@denops/std@~7.5.0/function";
-import * as op from "jsr:@denops/std@~7.5.0/option";
-import * as vars from "jsr:@denops/std@~7.5.0/variable";
+import * as fn from "jsr:@denops/std@~7.6.0/function";
+import * as op from "jsr:@denops/std@~7.6.0/option";
+import * as vars from "jsr:@denops/std@~7.6.0/variable";
 
 import { TextLineStream } from "jsr:@std/streams@~1.0.3/text-line-stream";
 import { is } from "jsr:@core/unknownutil@~4.3.0/is";
@@ -14,13 +14,7 @@ const RE_RANGE =
 const RE_SILENT = /(?:sil(?:e?|ent?)\b!?)?/;
 const RE_TERMINAL = /(?:ter(?:m?|min?|minal?)\b!?(?:\s+\+\+\S*)*)/;
 const RE_CMD_PREFIX = new RegExp(
-  `^[:\\s]*${
-    RE_SILENT.source
-  }[:\\s]*${
-    RE_RANGE.source
-  }[:\\s]*(?:!|${
-    RE_TERMINAL.source
-  })`,
+  `^[:\\s]*${RE_SILENT.source}[:\\s]*${RE_RANGE.source}[:\\s]*(?:!|${RE_TERMINAL.source})`,
 );
 const RE_COMPLETE_TARGET = /\S*$/;
 
@@ -172,21 +166,28 @@ export class Source extends BaseSource<Params> {
     });
   }
 
-  override getCompletePosition(args: {
+  override async getCompletePosition(args: {
+    denops: Denops;
     context: Context;
-  }): number {
+  }): Promise<number> {
     const { input } = args.context;
     let completePos = -1;
 
     if (args.context.mode === "c") {
       // command-line mode
-      const prefixMatch = RE_CMD_PREFIX.exec(input);
-      if (prefixMatch) {
-        const prefixLength = prefixMatch[0].length;
-        const cmdline = input.slice(prefixLength);
-        const targetPos = cmdline.search(RE_COMPLETE_TARGET);
-        if (targetPos >= 0) {
-          completePos = prefixLength + targetPos;
+      const complType = await fn.getcmdcompltype(args.denops);
+      if (complType === "shellcmd" || complType === "shellcmdline") {
+        completePos = input.search(RE_COMPLETE_TARGET);
+      } else {
+        // TODO: Use getcmdcompltype() to detect shellcmd/shellcmdline pattern.
+        const prefixMatch = RE_CMD_PREFIX.exec(input);
+        if (prefixMatch) {
+          const prefixLength = prefixMatch[0].length;
+          const cmdline = input.slice(prefixLength);
+          const targetPos = cmdline.search(RE_COMPLETE_TARGET);
+          if (targetPos >= 0) {
+            completePos = prefixLength + targetPos;
+          }
         }
       }
     } else {
@@ -212,8 +213,11 @@ export class Source extends BaseSource<Params> {
 
     if (args.context.mode === "c") {
       // command-line mode
-      const prefixMatch = RE_CMD_PREFIX.exec(input);
-      input = prefixMatch ? input.slice(prefixMatch[0].length) : "";
+      if (await fn.getcmdtype(args.denops) === ":") {
+        // TODO: Use getcmdcompltype() to detect shellcmd/shellcmdline pattern.
+        const prefixMatch = RE_CMD_PREFIX.exec(input);
+        input = prefixMatch ? input.slice(prefixMatch[0].length) : "";
+      }
     } else {
       // NOT command-line mode
       const filetype = await op.filetype.getLocal(args.denops);
