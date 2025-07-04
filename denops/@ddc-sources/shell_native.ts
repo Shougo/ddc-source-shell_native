@@ -171,28 +171,24 @@ export class Source extends BaseSource<Params> {
     context: Context;
   }): Promise<number> {
     const { input } = args.context;
-    let completePos = -1;
+    let completePos = input.search(RE_COMPLETE_TARGET);
 
     if (args.context.mode === "c") {
       // command-line mode
-      const complType = await fn.getcmdcompltype(args.denops);
-      if (complType === "shellcmd" || complType === "shellcmdline") {
-        completePos = input.search(RE_COMPLETE_TARGET);
-      } else {
-        // TODO: Use getcmdcompltype() to detect shellcmd/shellcmdline pattern.
-        const prefixMatch = RE_CMD_PREFIX.exec(input);
-        if (prefixMatch) {
-          const prefixLength = prefixMatch[0].length;
-          const cmdline = input.slice(prefixLength);
-          const targetPos = cmdline.search(RE_COMPLETE_TARGET);
-          if (targetPos >= 0) {
-            completePos = prefixLength + targetPos;
-          }
+      const complType = await getCompletionType(args.denops, input);
+      if (complType !== "shellcmd" && complType !== "shellcmdline") {
+        return -1;
+      }
+
+      const prefixMatch = RE_CMD_PREFIX.exec(input);
+      if (prefixMatch) {
+        const prefixLength = prefixMatch[0].length;
+        const cmdline = input.slice(prefixLength);
+        const targetPos = cmdline.search(RE_COMPLETE_TARGET);
+        if (targetPos >= 0) {
+          completePos = prefixLength + targetPos;
         }
       }
-    } else {
-      // NOT command-line mode
-      completePos = input.search(RE_COMPLETE_TARGET);
     }
 
     return completePos;
@@ -213,11 +209,8 @@ export class Source extends BaseSource<Params> {
 
     if (args.context.mode === "c") {
       // command-line mode
-      if (await fn.getcmdtype(args.denops) === ":") {
-        // TODO: Use getcmdcompltype() to detect shellcmd/shellcmdline pattern.
-        const prefixMatch = RE_CMD_PREFIX.exec(input);
-        input = prefixMatch ? input.slice(prefixMatch[0].length) : "";
-      }
+      const prefixMatch = RE_CMD_PREFIX.exec(input);
+      input = prefixMatch ? input.slice(prefixMatch[0].length) : "";
     } else {
       // NOT command-line mode
       const filetype = await op.filetype.getLocal(args.denops);
@@ -263,5 +256,28 @@ export class Source extends BaseSource<Params> {
       message,
       `ddc-source-${this.name}`,
     );
+  }
+}
+
+async function getCompletionType(
+  denops: Denops,
+  input: string,
+): Promise<string> {
+  if (await fn.mode(denops) === "c") {
+    const complType = await fn.getcmdcompltype(denops);
+    if (complType === "shellcmd" || complType === "shellcmdline") {
+      return complType;
+    }
+  }
+
+  const prefixMatch = RE_CMD_PREFIX.exec(input);
+  if (prefixMatch) {
+    return "shellcmdline";
+  }
+
+  try {
+    return await denops.call("getcmdcompltype", input) as string;
+  } catch (_) {
+    return "";
   }
 }
