@@ -1,26 +1,41 @@
 #!/usr/bin/env xonsh
 
+import os
 import sys
-import xonsh.completer
+from xonsh.completer import Completer
 
-def main():
-    completer = xonsh.completer.Completer()
+MSG_CHDIR = "chdir:"
+MSG_INPUT = "input:"
+
+END_OF_COMPLETION = "\n\x01EOC\x01\n"
+
+try:
+    completer = Completer()
+    user_input = ""
     while True:
-        try:
-            multiline_text = input()
+        message = input()
 
-            completions = completer.complete(
-                "", "", 0, 0, {},
-                multiline_text=multiline_text,
-                cursor_index=len(multiline_text)
-            )[0]
+        if message.startswith(MSG_CHDIR):
+            # Change the current working directory
+            new_cwd = message[len(MSG_CHDIR):]
+            os.chdir(new_cwd)
+            continue
+        elif message.startswith(MSG_INPUT):
+            # Do completion
+            user_input = message[len(MSG_INPUT):]
+            pass
+        else:
+            print(f"error: invalid message: {message}", file=sys.stderr)
+            sys.exit(1)
 
-            for completion in completions:
-                print(completion)
-            print("EOF", file=sys.stderr)
-        except KeyboardInterrupt:
-            print("\nExiting...")
-            break
+        completions, _lprefix = completer.complete(
+            "", "", 0, 0, {},
+            multiline_text=user_input,
+            cursor_index=len(user_input)
+        )
 
-if __name__ == "__main__":
-    main()
+        print(*completions, sep="\n", end=END_OF_COMPLETION, flush=True)
+
+        user_input = ""
+except (KeyboardInterrupt, EOFError) as _:
+    pass
