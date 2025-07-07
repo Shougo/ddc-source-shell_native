@@ -166,20 +166,14 @@ export class Source extends BaseSource<Params> {
     });
   }
 
-  override async getCompletePosition(args: {
-    denops: Denops;
+  override getCompletePosition(args: {
     context: Context;
-  }): Promise<number> {
+  }): number {
     const { input } = args.context;
-    let completePos = input.search(RE_COMPLETE_TARGET);
+    let completePos = -1;
 
     if (args.context.mode === "c") {
       // command-line mode
-      const complType = await getCompletionType(args.denops, input);
-      if (complType !== "shellcmd" && complType !== "shellcmdline") {
-        return -1;
-      }
-
       const prefixMatch = RE_CMD_PREFIX.exec(input);
       if (prefixMatch) {
         const prefixLength = prefixMatch[0].length;
@@ -189,6 +183,9 @@ export class Source extends BaseSource<Params> {
           completePos = prefixLength + targetPos;
         }
       }
+    } else {
+      // NOT command-line mode
+      completePos = input.search(RE_COMPLETE_TARGET);
     }
 
     return completePos;
@@ -257,27 +254,4 @@ export class Source extends BaseSource<Params> {
       `ddc-source-${this.name}`,
     );
   }
-}
-
-async function getCompletionType(
-  denops: Denops,
-  input: string,
-): Promise<string> {
-  if (await fn.mode(denops) === "c") {
-    const complType = await fn.getcmdcompltype(denops);
-    if (complType === "shellcmd" || complType === "shellcmdline") {
-      return complType;
-    }
-  }
-
-  const prefixMatch = RE_CMD_PREFIX.exec(input);
-  if (prefixMatch) {
-    return "shellcmdline";
-  }
-
-  if (await fn.exists(denops, "*getcompletiontype")) {
-    return await denops.call("getcompletiontype", input) as string;
-  }
-
-  return "";
 }
