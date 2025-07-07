@@ -275,9 +275,9 @@ async function getCompletionType(
     return "shellcmdline";
   }
 
-  try {
-    return await denops.call("getcmdcompltype", input) as string;
-  } catch (_) {
-    return "";
+  if (await fn.exists(denops, "*getcompletiontype")) {
+    return await denops.call("getcompletiontype", input) as string;
   }
+
+  return "";
 }
