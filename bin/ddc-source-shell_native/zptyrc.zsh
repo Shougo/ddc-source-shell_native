@@ -4,18 +4,38 @@ typeset -gx CACHE_DIR=${XDG_CACHE_HOME:-"$HOME/.cache"}/ddc-source-shell_native
 
 [[ -d $CACHE_DIR ]] || mkdir -p "$CACHE_DIR"
 
-# No prompt!
-PROMPT=
-
 # Load completion system
 autoload -U compinit
 compinit -C -d "$CACHE_DIR/compdump"
 
-# Never run commands
-bindkey -r '^M'
-bindkey -r '^J'
+# Setup options
+HISTSIZE=0
+unset HISTFILE
+unset PROMPT
+unset PROMPT2
+unset PROMPT3
+unset PROMPT4
+unset RPROMPT
+unset RPROMPT2
+unsetopt beep
+setopt ignore_eof
+setopt single_line_zle
+
+# Keybindings
+bindkey -e
+bindkey -rR '^@'-'^_'
+bindkey -rp '^[' '^X'
+bindkey -r '^?'
+bindkey '^J' accept-line
+bindkey '^B' backward-char
 bindkey '^I' complete-word
 bindkey '^U' kill-buffer
+
+# Never run commands, except `cd`
+setopt debug_before_cmd
+DEBUGTRAP() {
+    [[ $ZSH_DEBUG_CMD == 'cd '* ]] || setopt err_exit
+}
 
 # Send a line with null-byte at the end before and after completions are output
 null-line () {

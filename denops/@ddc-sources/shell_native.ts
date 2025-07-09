@@ -7,6 +7,7 @@ import * as op from "jsr:@denops/std@~7.6.0/option";
 import * as vars from "jsr:@denops/std@~7.6.0/variable";
 
 import { TextLineStream } from "jsr:@std/streams@~1.0.3/text-line-stream";
+import { Mutex } from "jsr:@core/asyncutil@~1.2.0/mutex";
 import { is } from "jsr:@core/unknownutil@~4.3.0/is";
 
 const RE_RANGE =
@@ -18,6 +19,16 @@ const RE_CMD_PREFIX = new RegExp(
 );
 const RE_COMPLETE_TARGET = /\S*$/;
 
+const MSG_CHDIR = "chdir:";
+const MSG_INPUT = "input:";
+
+const END_OF_COMPLETION = "\x01EOC\x01";
+
+type MessageType =
+  | typeof MSG_CHDIR
+  | typeof MSG_INPUT;
+type Message = `${MessageType}${string}`;
+
 type Params = {
   envs: Record<string, string>;
   shell: string;
@@ -26,7 +37,12 @@ type Params = {
 const isEnvs = is.RecordObjectOf(is.String);
 
 export class Source extends BaseSource<Params> {
-  #completer?: (cmdline: string) => Promise<string[]>;
+  #completer?: (
+    input: string,
+    options?: {
+      cwd?: string;
+    },
+  ) => Promise<string[]>;
 
   override async onInit(args: {
     denops: Denops;
@@ -58,6 +74,7 @@ export class Source extends BaseSource<Params> {
       return;
     }
 
+    let cwd = await fn.getcwd(denops);
     const command = new Deno.Command(
       shell,
       {
@@ -65,7 +82,7 @@ export class Source extends BaseSource<Params> {
         stdout: "piped",
         stderr: "piped",
         stdin: "piped",
-        cwd: await fn.getcwd(denops) as string,
+        cwd,
         env: {
           // Merge environment variables.
           // This is necessary to ensure that the shell has access to the same
@@ -97,8 +114,14 @@ export class Source extends BaseSource<Params> {
       .pipeTo(
         new WritableStream({
           write: (chunk: string) => {
-            // Collect output lines
-            outputBuffer.push(chunk);
+            if (chunk === END_OF_COMPLETION) {
+              // Move out buffered output lines
+              const output = outputBuffer.splice(0);
+              eofWaiter?.resolve(output);
+            } else {
+              // Collect output lines
+              outputBuffer.push(chunk);
+            }
           },
         }),
       );
@@ -109,14 +132,8 @@ export class Source extends BaseSource<Params> {
       .pipeTo(
         new WritableStream({
           write: (chunk: string) => {
-            // Wait until "EOF"
-            if (chunk === "EOF") {
-              // Move out buffered output lines
-              const output = outputBuffer.splice(0);
-              eofWaiter?.resolve(output);
-            } else {
-              this.#printError(denops, `${shell}: ${chunk}`);
-            }
+            // Error logging
+            this.#printError(denops, `${shell}: ${chunk}`);
           },
         }),
       );
@@ -125,16 +142,25 @@ export class Source extends BaseSource<Params> {
     readable.pipeTo(proc.stdin);
     const cmdlineWriter = writable.getWriter();
 
-    this.#completer = async (cmdline: string): Promise<string[]> => {
+    const mutex = new Mutex();
+    this.#completer = async (input, options = {}): Promise<string[]> => {
       if (!this.#completer) {
         return [];
       }
 
-      // Wait for the previous completion to finish
-      await eofWaiter?.promise;
-
+      // Wait for the previous completion to finish, and renew the waiter
+      using _guard = await mutex.acquire();
       const { promise } = eofWaiter = Promise.withResolvers();
-      cmdlineWriter.write(cmdline + "\n");
+
+      // Send messages to the worker process
+      const messages: Message[] = [];
+      if (options.cwd && options.cwd !== cwd) {
+        cwd = options.cwd;
+        messages.push(`${MSG_CHDIR}${cwd}`);
+      }
+      messages.push(`${MSG_INPUT}${input}`);
+      cmdlineWriter.write([...messages, ""].join("\n"));
+
       return await promise;
     };
 
@@ -232,7 +258,8 @@ export class Source extends BaseSource<Params> {
     }
 
     // Process collected lines
-    const items = (await completer(input))
+    const cwd = await fn.getcwd(args.denops);
+    const items = (await completer(input, { cwd }))
       .filter((line) => line.length > 0)
       .map((line) => {
         line = line.replace(/\/\/$/, "/"); // Replace the last //
