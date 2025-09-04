@@ -1,14 +1,14 @@
-import type { Context, DdcGatherItems } from "jsr:@shougo/ddc-vim@~9.5.0/types";
-import { BaseSource } from "jsr:@shougo/ddc-vim@~9.5.0/source";
+import type { Context, DdcGatherItems } from "@shougo/ddc-vim/types";
+import { BaseSource } from "@shougo/ddc-vim/source";
 
-import type { Denops } from "jsr:@denops/core@~7.0.0";
-import * as fn from "jsr:@denops/std@~7.6.0/function";
-import * as op from "jsr:@denops/std@~7.6.0/option";
-import * as vars from "jsr:@denops/std@~7.6.0/variable";
+import type { Denops } from "@denops/std";
+import * as fn from "@denops/std/function";
+import * as op from "@denops/std/option";
+import * as vars from "@denops/std/variable";
 
-import { TextLineStream } from "jsr:@std/streams@~1.0.3/text-line-stream";
-import { Mutex } from "jsr:@core/asyncutil@~1.2.0/mutex";
-import { is } from "jsr:@core/unknownutil@~4.3.0/is";
+import { TextLineStream } from "@std/streams/text-line-stream";
+import { Mutex } from "@core/asyncutil/mutex";
+import { is } from "@core/unknownutil/is";
 
 const RE_RANGE =
   /(?:[0-9.$%, :]+|'.|\\[/?&]|\/(?:[^\\/]+|\\.)*\/|\?(?:[^\\?]+|\\.)*\?)*/;

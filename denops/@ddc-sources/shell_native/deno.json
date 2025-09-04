@@ -1,0 +1,18 @@
+{
+  "name": "@shougo/ddc-source-shell_native",
+  "exports": {
+    ".": "./main.ts"
+  },
+  "publish": {
+    "include": [
+      "**/*.ts"
+    ]
+  },
+  "imports": {
+    "@core/asyncutil": "jsr:@core/asyncutil@~1.2.0",
+    "@core/unknownutil": "jsr:@core/unknownutil@~4.3.0",
+    "@shougo/ddc-vim": "jsr:@shougo/ddc-vim@~10.0.0",
+    "@denops/std": "jsr:@denops/std@~8.0.0",
+    "@std/streams": "jsr:@std/streams@~1.0.3"
+  }
+}
