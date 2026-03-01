@@ -2,7 +2,10 @@
 
 typeset -gx CACHE_DIR=${XDG_CACHE_HOME:-"$HOME/.cache"}/ddc-source-shell_native
 
-[[ -d $CACHE_DIR ]] || mkdir -p "$CACHE_DIR"
+# Create cache directory if missing and fail loudly if creation fails.
+if [[ ! -d $CACHE_DIR ]]; then
+  mkdir -p -- "$CACHE_DIR" || { echo "error: failed to create cache dir: $CACHE_DIR" >&2; exit 1; }
+fi
 
 # Load completion system
 autoload -U compinit
