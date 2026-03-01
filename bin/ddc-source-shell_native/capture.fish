@@ -25,7 +25,7 @@ while true
 
     begin
         complete --do-complete "$user_input"
-        echo -ne $END_OF_COMPLETION
+        printf "%b" "$END_OF_COMPLETION"
     end >&1
 
     set user_input
