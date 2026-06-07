@@ -143,21 +143,24 @@ export class Source extends BaseSource<Params> {
     const cmdlineWriter = writable.getWriter();
 
     const mutex = new Mutex();
+    let currentCwd = await fn.getcwd(denops);
+
     this.#completer = async (input, options = {}): Promise<string[]> => {
       if (!this.#completer) {
         return [];
       }
 
-      // Wait for the previous completion to finish, and renew the waiter
       using _guard = await mutex.acquire();
       const { promise } = eofWaiter = Promise.withResolvers();
 
-      // Send messages to the worker process
+      const nextCwd = options.cwd ?? currentCwd;
       const messages: Message[] = [];
-      if (options.cwd && options.cwd !== cwd) {
-        cwd = options.cwd;
-        messages.push(`${MSG_CHDIR}${cwd}`);
+
+      if (nextCwd !== currentCwd) {
+        currentCwd = nextCwd;
+        messages.push(`${MSG_CHDIR}${nextCwd}`);
       }
+
       messages.push(`${MSG_INPUT}${input}`);
       cmdlineWriter.write([...messages, ""].join("\n"));
 
